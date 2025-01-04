@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from sklearn.cluster import DBSCAN
+import matplotlib.pyplot as plt
 
 # Load and preprocess the data
 df = pd.read_json("livedata2.json")
@@ -48,6 +49,36 @@ def find_contacts_by_location(lat, lon):
     except ValueError:
         return "Invalid latitude or longitude entered."
     return "\n".join(contacts) if contacts else f"No contacts found near location ({lat}, {lon})"
+
+# Function to display scatter plot
+def show_scatter_plot():
+    contacts = result_text.get().split("\n")
+    if not contacts or "No" in contacts[0]:
+        messagebox.showinfo("No Data", "No contacts to display on the scatter plot.")
+        return
+    
+    latitudes = []
+    longitudes = []
+    names = []
+    
+    for contact in contacts:
+        parts = contact.split(" at (")
+        if len(parts) > 1:
+            names.append(parts[0].replace("Contact Name: ", ""))
+            coord_parts = parts[1].replace(")", "").split(", ")
+            latitudes.append(float(coord_parts[0]))
+            longitudes.append(float(coord_parts[1]))
+    
+    plt.figure(figsize=(8, 6))
+    plt.scatter(longitudes, latitudes, c='blue', label="Contacts")
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+    plt.title("Scatter Plot of Potential Contacts")
+    for i, name in enumerate(names):
+        plt.text(longitudes[i], latitudes[i], name, fontsize=9, ha='right')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 # Function to search based on user choice
 def search_contacts():
@@ -103,7 +134,11 @@ lon_entry.grid(row=2, column=2, padx=5, pady=5)
 
 # Search button
 search_button = ttk.Button(frame, text="Find Contacts", command=search_contacts)
-search_button.grid(row=3, column=1, columnspan=2, pady=5)
+search_button.grid(row=3, column=0, columnspan=2, pady=5)
+
+# Scatter plot button
+scatter_button = ttk.Button(frame, text="Show Scatter Plot", command=show_scatter_plot)
+scatter_button.grid(row=3, column=2, columnspan=2, pady=5)
 
 # Results display
 result_text = tk.StringVar()
