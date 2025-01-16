@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from sklearn.cluster import DBSCAN
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 # Load and preprocess the data
@@ -11,18 +12,21 @@ df = pd.read_json("livedata2.json")
 df['latitude'] = df['latitude'].astype(float)
 df['longitude'] = df['longitude'].astype(float)
 
-# Perform clustering
-df[['latitude', 'longitude']] = np.radians(df[['latitude', 'longitude']])
-model = DBSCAN(eps=0.0018288, min_samples=2, metric='haversine').fit(df[['latitude', 'longitude']])
-df['cluster'] = model.labels_
+# Split the data into training and testing sets
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+
+# Use train_df for training the model
+train_df[['latitude', 'longitude']] = np.radians(train_df[['latitude', 'longitude']])
+model = DBSCAN(eps=0.0018288, min_samples=2, metric='haversine').fit(train_df[['latitude', 'longitude']])
+train_df['cluster'] = model.labels_
 
 # Function to find contacts by name
 def find_contacts_by_name(person_name):
     contacts = []
-    if person_name in df['id'].values:  # Using the 'id' column as the name column
-        for cluster in set(df.loc[df['id'] == person_name, 'cluster']):
+    if person_name in train_df['id'].values:  # Using the 'id' column as the name column
+        for cluster in set(train_df.loc[train_df['id'] == person_name, 'cluster']):
             if cluster != -1:  # Ignore noise points
-                cluster_members = df[(df['cluster'] == cluster) & (df['id'] != person_name)]
+                cluster_members = train_df[(train_df['cluster'] == cluster) & (train_df['id'] != person_name)]
                 for _, row in cluster_members.iterrows():
                     contact = f"Contact Name: {row['id']} at ({np.degrees(row['latitude']):.6f}, {np.degrees(row['longitude']):.6f})"
                     contacts.append(contact)
@@ -34,27 +38,36 @@ def find_contacts_by_name(person_name):
 def find_contacts_by_location(lat, lon):
     contacts = []
     try:
+        # Convert the input latitude and longitude to radians
         lat_rad = np.radians(float(lat))
         lon_rad = np.radians(float(lon))
-        point_cluster = model.fit_predict([[lat_rad, lon_rad]])
-        cluster = point_cluster[0]
+        location = np.array([lat_rad, lon_rad])
+        
+        # Compute the haversine distance to all points in the dataset
+        distances = np.sqrt((train_df['latitude'] - lat_rad)**2 + (train_df['longitude'] - lon_rad)**2)
+        nearest_point_index = distances.idxmin()
+        
+        # Find the cluster of the nearest point
+        cluster = train_df.loc[nearest_point_index, 'cluster']
 
         if cluster == -1:  # Noise point
             return f"No clusters found near location ({lat}, {lon})"
         
-        cluster_members = df[df['cluster'] == cluster]
+        # Get all members of the same cluster
+        cluster_members = train_df[train_df['cluster'] == cluster]
         for _, row in cluster_members.iterrows():
             contact = f"Contact Name: {row['id']} at ({np.degrees(row['latitude']):.6f}, {np.degrees(row['longitude']):.6f})"
             contacts.append(contact)
     except ValueError:
         return "Invalid latitude or longitude entered."
+    
     return "\n".join(contacts) if contacts else f"No contacts found near location ({lat}, {lon})"
 
-# Function to display scatter plot
-def show_scatter_plot():
+# Function to display scatter plot and heat map
+def show_visualization():
     contacts = result_text.get().split("\n")
     if not contacts or "No" in contacts[0]:
-        messagebox.showinfo("No Data", "No contacts to display on the scatter plot.")
+        messagebox.showinfo("No Data", "No contacts to display.")
         return
     
     latitudes = []
@@ -69,15 +82,29 @@ def show_scatter_plot():
             latitudes.append(float(coord_parts[0]))
             longitudes.append(float(coord_parts[1]))
     
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(12, 6))
+
+    # Scatter plot
+    plt.subplot(1, 2, 1)
     plt.scatter(longitudes, latitudes, c='blue', label="Contacts")
     plt.xlabel("Longitude")
     plt.ylabel("Latitude")
-    plt.title("Scatter Plot of Potential Contacts")
+    plt.title("Scatter Plot of Contacts")
     for i, name in enumerate(names):
         plt.text(longitudes[i], latitudes[i], name, fontsize=9, ha='right')
     plt.legend()
     plt.grid(True)
+
+    # Heat map
+    plt.subplot(1, 2, 2)
+    plt.hexbin(longitudes, latitudes, gridsize=30, cmap='YlOrRd', mincnt=1)
+    plt.colorbar(label='Number of Contacts')
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+    plt.title("Heat Map of Contact Density")
+    plt.grid(True)
+
+    plt.tight_layout()
     plt.show()
 
 # Function to search based on user choice
@@ -136,8 +163,8 @@ lon_entry.grid(row=2, column=2, padx=5, pady=5)
 search_button = ttk.Button(frame, text="Find Contacts", command=search_contacts)
 search_button.grid(row=3, column=0, columnspan=2, pady=5)
 
-# Scatter plot button
-scatter_button = ttk.Button(frame, text="Show Scatter Plot", command=show_scatter_plot)
+# Scatter plot and heat map button
+scatter_button = ttk.Button(frame, text="Show Visualization", command=show_visualization)
 scatter_button.grid(row=3, column=2, columnspan=2, pady=5)
 
 # Results display
